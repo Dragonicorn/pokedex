@@ -8,6 +8,10 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
+
+	//"github.com/Dragonicorn/pokedex/internal/pokecache"
+	"pokedex/internal/pokecache"
 )
 
 func cleanInput(text string) []string {
@@ -135,6 +139,12 @@ func main() {
 			callback:    commandExit,
 		},
 	}
+	pokeCache := pokecache.NewCache(time.Second * 5)
+	value := []byte("Hello PokeCache!")
+	pokeCache.Add("Test", value)
+	fmt.Println("Test added to Cache...")
+	result := pokeCache.Get("Text")
+	fmt.Printf("Test retrieved from Cache = '%s'\n", result)
 
 	pdCfg := &pdConfig{
 		Next: "",
