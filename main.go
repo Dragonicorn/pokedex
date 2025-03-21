@@ -10,8 +10,7 @@ import (
 	"strings"
 	"time"
 
-	//"github.com/Dragonicorn/pokedex/internal/pokecache"
-	"pokedex/internal/pokecache"
+	pokecache "github.com/Dragonicorn/pokedex/internal"
 )
 
 func cleanInput(text string) []string {
@@ -33,8 +32,9 @@ type Registry map[string]cliCommand
 var registry Registry
 
 type pdConfig struct {
-	Next string
-	Prev string
+	Next  string
+	Prev  string
+	Cache pokecache.Cache
 }
 
 type pdLocationArea struct {
@@ -57,7 +57,7 @@ func commandExit(cfg *pdConfig) error {
 
 func commandHelp(cfg *pdConfig) error {
 	fmt.Println("Welcome to the Pokedex!")
-	fmt.Println("Usage:\n")
+	fmt.Println("Usage:")
 	for _, cmd := range registry {
 		fmt.Printf("%s: %s\n", cmd.name, cmd.description)
 	}
@@ -68,23 +68,31 @@ func mapArea(cfg *pdConfig, url string) error {
 	if len(url) == 0 {
 		url = "https://pokeapi.co/api/v2/location-area/"
 	}
-	res, err := http.Get(url)
-	if err != nil {
-		//log.Fatal(err)
-		return err
-	}
-	body, err := io.ReadAll(res.Body)
-	res.Body.Close()
-	if res.StatusCode > 299 {
-		//log.Fatalf("Response failed with status code: %d and\nbody: %s\n", res.StatusCode, body)
-		return err
-	}
-	if err != nil {
-		//log.Fatal(err)
-		return err
+	// Check for cached data
+	body, ok := cfg.Cache.Get(url)
+	if ok {
+		fmt.Printf("Data at %s retrieved from cache...", url)
+	} else {
+		res, err := http.Get(url)
+		if err != nil {
+			//log.Fatal(err)
+			return err
+		}
+		body, err = io.ReadAll(res.Body)
+		res.Body.Close()
+		if res.StatusCode > 299 {
+			//log.Fatalf("Response failed with status code: %d and\nbody: %s\n", res.StatusCode, body)
+			return err
+		}
+		if err != nil {
+			//log.Fatal(err)
+			return err
+		}
+		cfg.Cache.Add(url, body)
+		fmt.Printf("Data at %s added to cache...", url)
 	}
 	data := pdLocationAreas{}
-	err = json.Unmarshal(body, &data)
+	err := json.Unmarshal(body, &data)
 	if err != nil {
 		return err
 	}
@@ -139,16 +147,36 @@ func main() {
 			callback:    commandExit,
 		},
 	}
-	pokeCache := pokecache.NewCache(time.Second * 5)
-	value := []byte("Hello PokeCache!")
-	pokeCache.Add("Test", value)
-	fmt.Println("Test added to Cache...")
-	result := pokeCache.Get("Text")
-	fmt.Printf("Test retrieved from Cache = '%s'\n", result)
+	// value := []byte("Hello PokeCache!")
+	// pokeCache.Add("Hi", value)
+	// fmt.Println("Hi added to Cache...")
+	// time.Sleep(time.Second * 5)
+	// value = []byte("Goodbye PokeCache!")
+	// pokeCache.Add("Bye", value)
+	// fmt.Println("Bye added to Cache...")
+	// result, ok := pokeCache.Get("Test")
+	// if ok {
+	// 	fmt.Printf("'%s' retrieved from Cache.\n", result)
+	// } else {
+	// 	fmt.Println("Test not stored in Cache.")
+	// }
+	// result, ok = pokeCache.Get("Bye")
+	// if ok {
+	// 	fmt.Printf("'%s' retrieved from Cache.\n", result)
+	// } else {
+	// 	fmt.Println("Bye not stored in Cache.")
+	// }
+	// result, ok = pokeCache.Get("Hi")
+	// if ok {
+	// 	fmt.Printf("'%s' retrieved from Cache.\n", result)
+	// } else {
+	// 	fmt.Println("Hi not stored in Cache.")
+	// }
 
 	pdCfg := &pdConfig{
-		Next: "",
-		Prev: "",
+		Next:  "",
+		Prev:  "",
+		Cache: *pokecache.NewCache(time.Second * 15),
 	}
 	var text string
 	scanner := bufio.NewScanner(os.Stdin)
