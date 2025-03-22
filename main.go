@@ -24,7 +24,7 @@ func cleanInput(text string) []string {
 type cliCommand struct {
 	name        string
 	description string
-	callback    func(*pdConfig) error
+	callback    func(*pdConfig, []string) error
 }
 
 type Registry map[string]cliCommand
@@ -49,13 +49,22 @@ type pdLocationAreas struct {
 	Results []pdLocationArea `json:"results"`
 }
 
-func commandExit(cfg *pdConfig) error {
+type pdEncounter struct {
+	Pokemon pdLocationArea `json:"pokemon"`
+}
+
+type pdLocationAreaEncounters struct {
+	Name       string        `json:"name"`
+	Encounters []pdEncounter `json:"pokemon_encounters"`
+}
+
+func commandExit(cfg *pdConfig, args []string) error {
 	fmt.Println("Closing the Pokedex... Goodbye!")
 	os.Exit(0)
 	return nil
 }
 
-func commandHelp(cfg *pdConfig) error {
+func commandHelp(cfg *pdConfig, args []string) error {
 	fmt.Println("Welcome to the Pokedex!")
 	fmt.Println("Usage:")
 	for _, cmd := range registry {
@@ -108,13 +117,13 @@ func mapArea(cfg *pdConfig, url string) error {
 	return nil
 }
 
-func commandMap(cfg *pdConfig) error {
+func commandMap(cfg *pdConfig, args []string) error {
 	//fmt.Printf("Previous: %s; Next: %s\n", cfg.Prev, cfg.Next)
 	err := mapArea(cfg, cfg.Next)
 	return err
 }
 
-func commandMapB(cfg *pdConfig) error {
+func commandMapB(cfg *pdConfig, args []string) error {
 	if cfg.Prev == "" {
 		fmt.Println("you're on the first page")
 		return nil
@@ -124,8 +133,55 @@ func commandMapB(cfg *pdConfig) error {
 	return err
 }
 
+func commandExplore(cfg *pdConfig, args []string) error {
+	if len(args) > 0 {
+		url := fmt.Sprintf("https://pokeapi.co/api/v2/location-area/%s/", args[0])
+		// Check for cached data
+		body, ok := cfg.Cache.Get(url)
+		if ok {
+			fmt.Printf("Data at %s retrieved from cache...\n", url)
+		} else {
+			res, err := http.Get(url)
+			if err != nil {
+				//log.Fatal(err)
+				return err
+			}
+			body, err = io.ReadAll(res.Body)
+			res.Body.Close()
+			if res.StatusCode > 299 {
+				//log.Fatalf("Response failed with status code: %d and\nbody: %s\n", res.StatusCode, body)
+				return err
+			}
+			if err != nil {
+				//log.Fatal(err)
+				return err
+			}
+			cfg.Cache.Add(url, body)
+			fmt.Printf("Data at %s added to cache...\n", url)
+		}
+		data := pdLocationAreaEncounters{}
+		err := json.Unmarshal(body, &data)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Exploring %s...\nFound Pokemon:\n", data.Name)
+		for i, _ := range data.Encounters {
+			//fmt.Printf("'%s': '%s'\n", data.Results[i].Name, data.Results[i].URL)
+			fmt.Printf(" - %s\n", data.Encounters[i].Pokemon.Name)
+		}
+	} else {
+		return fmt.Errorf("No area provided to explore.")
+	}
+	return nil
+}
+
 func main() {
 	registry = Registry{
+		"explore": {
+			name:        "explore",
+			description: "Displays a list of Pokemon in a location area",
+			callback:    commandExplore,
+		},
 		"map": {
 			name:        "map",
 			description: "Displays a list of location areas in the Pokemon world",
@@ -147,38 +203,18 @@ func main() {
 			callback:    commandExit,
 		},
 	}
-	// value := []byte("Hello PokeCache!")
-	// pokeCache.Add("Hi", value)
-	// fmt.Println("Hi added to Cache...")
-	// time.Sleep(time.Second * 5)
-	// value = []byte("Goodbye PokeCache!")
-	// pokeCache.Add("Bye", value)
-	// fmt.Println("Bye added to Cache...")
-	// result, ok := pokeCache.Get("Test")
-	// if ok {
-	// 	fmt.Printf("'%s' retrieved from Cache.\n", result)
-	// } else {
-	// 	fmt.Println("Test not stored in Cache.")
-	// }
-	// result, ok = pokeCache.Get("Bye")
-	// if ok {
-	// 	fmt.Printf("'%s' retrieved from Cache.\n", result)
-	// } else {
-	// 	fmt.Println("Bye not stored in Cache.")
-	// }
-	// result, ok = pokeCache.Get("Hi")
-	// if ok {
-	// 	fmt.Printf("'%s' retrieved from Cache.\n", result)
-	// } else {
-	// 	fmt.Println("Hi not stored in Cache.")
-	// }
 
 	pdCfg := &pdConfig{
 		Next:  "",
 		Prev:  "",
 		Cache: *pokecache.NewCache(time.Second * 15),
 	}
-	var text string
+
+	var (
+		text string
+		args []string
+	)
+
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
 		fmt.Print("Pokedex > ")
@@ -187,18 +223,19 @@ func main() {
 		if err := scanner.Err(); err != nil {
 			fmt.Fprintln(os.Stderr, "reading standard input:", err)
 		}
-		//fmt.Println(text)
 		words := cleanInput(text)
 		cmd := words[0]
+		if len(words) > 1 {
+			args = words[1:]
+		}
 		command, ok := registry[cmd]
 		if ok {
-			err := command.callback(pdCfg)
+			err := command.callback(pdCfg, args)
 			if err != nil {
-				fmt.Printf("Error %v returned by %s function.\n", err, command.name)
+				fmt.Printf("Error '%v' returned by %s function.\n", err, command.name)
 			}
 		} else {
 			fmt.Println("Unknown command.")
 		}
-
 	}
 }
