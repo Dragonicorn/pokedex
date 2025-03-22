@@ -202,6 +202,7 @@ func commandCatch(cfg *pdConfig, args []string) error {
 	rn := rand.Uint32() >> 24
 	if rn > uint32(data.BaseExperience) {
 		fmt.Printf("%s was caught!\n", data.Name)
+		fmt.Println("You may now inspect it with the inspect command.")
 		pokedex[data.Name] = data
 	} else {
 		fmt.Printf("%s escaped!\n", data.Name)
@@ -235,8 +236,27 @@ func commandInspect(cfg *pdConfig, args []string) error {
 	return nil
 }
 
+func commandPokedex(cfg *pdConfig, args []string) error {
+	fmt.Print("Your Pokedex")
+	if len(pokedex) == 0 {
+		fmt.Println(" is empty!")
+		return nil
+	}
+	fmt.Println(":")
+	for k, _ := range pokedex {
+		fmt.Printf(" - %s\n", k)
+	}
+	//fmt.Printf("Pokedex: %v\n", pokedex)
+	return nil
+}
+
 func main() {
 	registry = Registry{
+		"pokedex": {
+			name:        "pokedex",
+			description: "Displays the list of caught Pokemon in the Pokedex",
+			callback:    commandPokedex,
+		},
 		"inspect": {
 			name:        "inspect",
 			description: "Inspect a caught Pokemon",
